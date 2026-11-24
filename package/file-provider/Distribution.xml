@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Android Finder — File Provider</title>
+    <options customize="never" hostArchitectures="arm64"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="14.0"/>
+        </allowed-os-versions>
+    </volume-check>
+    <choices-outline>
+        <line choice="androidfinder"/>
+    </choices-outline>
+    <choice id="androidfinder" visible="false">
+        <pkg-ref id="local.androidfinder.native"/>
+    </choice>
+    <pkg-ref id="local.androidfinder.native" version="0.7.4">AndroidFinder-FileProvider-component.pkg</pkg-ref>
+</installer-gui-script>

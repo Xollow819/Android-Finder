@@ -1,0 +1,156 @@
+--- src/libusb1-glue.c
++++ src/libusb1-glue.c
+@@ -1982,6 +1982,8 @@
+       fprintf(stderr, "libusb_claim_interface() reports device is busy, likely in use by GVFS or KDE MTP device handling already");
+     else
+       fprintf(stderr, "error returned by libusb_claim_interface() = %d", usbresult);
++    libusb_free_config_descriptor(config);
++    libusb_close(device_handle);
+     return -1;
+   }
+ 
+@@ -2100,16 +2102,6 @@
+     clear_stall(ptp_usb);
+     libusb_release_interface(ptp_usb->handle, (int) ptp_usb->interface);
+   }
+-  if (FLAG_FORCE_RESET_ON_CLOSE(ptp_usb)) {
+-    /*
+-     * Some devices really love to get reset after being
+-     * disconnected. Again, since Windows never disconnects
+-     * a device closing behaviour is seldom or never exercised
+-     * on devices when engineered and often error prone.
+-     * Reset may help some.
+-     */
+-    libusb_reset_device (ptp_usb->handle);
+-  }
+   libusb_close(ptp_usb->handle);
+ }
+ 
+@@ -2209,9 +2201,10 @@
+  * @param usbinfo a pointer to the new usbinfo.
+  * @return an error code.
+  */
+-LIBMTP_error_number_t configure_usb_device(LIBMTP_raw_device_t *device,
+-					   PTPParams *params,
+-					   void **usbinfo)
++static LIBMTP_error_number_t configure_usb_session(LIBMTP_raw_device_t *device,
++                                                   PTPParams *params,
++                                                   void **usbinfo,
++                                                   int *probe)
+ {
+   PTP_USB *ptp_usb;
+   libusb_device *ldevice;
+@@ -2300,35 +2293,12 @@
+     return LIBMTP_ERROR_CONNECTING;
+   }
+ 
+-  /* Special short timeout for the first trial of opensession. */
+-  set_usb_device_timeout(ptp_usb, USB_START_TIMEOUT);
+-  /*
+-   * This works in situations where previous bad applications
+-   * have not used LIBMTP_Release_Device on exit
+-   */
+-  if ((ret = ptp_opensession(params, 1)) == PTP_ERROR_IO) {
+-    LIBMTP_ERROR("PTP_ERROR_IO: failed to open session, trying again after resetting USB interface\n");
+-    LIBMTP_ERROR("LIBMTP libusb: Attempt to reset device\n");
+-    libusb_reset_device (ptp_usb->handle);
+-    close_usb(ptp_usb);
++  /* A claimed interface is distinct from a busy or missing device. */
++  if (probe != NULL)
++    *probe = 0;
++  set_usb_device_timeout(ptp_usb, probe == NULL ? USB_START_TIMEOUT : 1000);
++  ret = ptp_opensession(params, 1);
+ 
+-    if(init_ptp_usb(params, ptp_usb, ldevice) <0) {
+-      LIBMTP_ERROR("LIBMTP PANIC: Could not init USB on second attempt\n");
+-      libusb_free_device_list (devs, 0);
+-      free (ptp_usb);
+-      return LIBMTP_ERROR_CONNECTING;
+-    }
+-
+-    /* Normal timeout will have been restored by init_ptp_usb */
+-    /* Device has been reset, try again */
+-    if ((ret = ptp_opensession(params, 1)) == PTP_ERROR_IO) {
+-      LIBMTP_ERROR("LIBMTP PANIC: failed to open session on second attempt\n");
+-      libusb_free_device_list (devs, 0);
+-      free (ptp_usb);
+-      return LIBMTP_ERROR_CONNECTING;
+-    }
+-  }
+-
+   /* Was the transaction id invalid? Try again */
+   if (ret == PTP_RC_InvalidTransactionID) {
+     LIBMTP_ERROR("LIBMTP WARNING: Transaction ID was invalid, increment and try again\n");
+@@ -2340,14 +2310,14 @@
+     LIBMTP_ERROR("LIBMTP PANIC: Could not open session! "
+ 	    "(Return code %d)\n  Try to reset the device.\n",
+ 	    ret);
+-    libusb_release_interface(ptp_usb->handle, ptp_usb->interface);
++    close_usb(ptp_usb);
+     libusb_free_device_list (devs, 0);
+     free (ptp_usb);
+     return LIBMTP_ERROR_CONNECTING;
+   }
+ 
+   /* If everything is good, ensure to reset the timeout to the correct value */
+-  set_usb_device_timeout(ptp_usb, get_timeout(ptp_usb));
++  set_usb_device_timeout(ptp_usb, probe == NULL ? get_timeout(ptp_usb) : 1000);
+ 
+   /* OK configured properly */
+   *usbinfo = (void *) ptp_usb;
+@@ -2356,6 +2326,55 @@
+ }
+ 
+ 
++LIBMTP_error_number_t configure_usb_device(LIBMTP_raw_device_t *device,
++                                           PTPParams *params, void **usbinfo)
++{
++  return configure_usb_session(device, params, usbinfo, NULL);
++}
++
++/* A background check only reads storage information. It never resets USB. */
++int ANDROIDFINDER_Probe_Storage(LIBMTP_raw_device_t *device)
++{
++  PTPParams params = {0};
++  PTPStorageIDs ids = {0};
++  PTP_USB *usb;
++  void *usbinfo = NULL;
++  int result = -1;
++  params.device_flags = device->device_entry.device_flags;
++#if defined(HAVE_ICONV) && defined(HAVE_LANGINFO_H)
++  params.cd_ucs2_to_locale = iconv_open("UTF-8", "UTF-16LE");
++  params.cd_locale_to_ucs2 = iconv_open("UTF-16LE", "UTF-8");
++#endif
++  if (configure_usb_session(device, &params, &usbinfo, &result) == LIBMTP_ERROR_NONE) {
++    usb = (PTP_USB *) usbinfo;
++    usb->params = &params;
++    if (ptp_getstorageids(&params, &ids) == PTP_RC_OK) {
++      for (uint32_t i = 0; i < ids.n; i++) {
++        PTPStorageInfo info = {0};
++        if (ptp_getstorageinfo(&params, ids.Storage[i], &info) == PTP_RC_OK)
++          result = 1;
++        free(info.StorageDescription);
++        free(info.VolumeLabel);
++        if (result == 1)
++          break;
++      }
++    }
++    ptp_closesession(&params);
++    close_usb(usb);
++    free(usb);
++  }
++  free(ids.Storage);
++  ptp_free_params(&params);
++#if defined(HAVE_ICONV) && defined(HAVE_LANGINFO_H)
++  if (params.cd_ucs2_to_locale != (iconv_t) -1)
++    iconv_close(params.cd_ucs2_to_locale);
++  if (params.cd_locale_to_ucs2 != (iconv_t) -1)
++    iconv_close(params.cd_locale_to_ucs2);
++#endif
++  return result;
++}
++
++
+ void close_device (PTP_USB *ptp_usb, PTPParams *params)
+ {
+   if (ptp_closesession(params)!=PTP_RC_OK)

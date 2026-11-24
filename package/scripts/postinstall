@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+# Other target volumes will load the agent at the next GUI login on that volume.
+[ "${3:-/}" = / ] || exit 0
+console_user=$(/usr/bin/stat -f '%u' /dev/console)
+[ "$console_user" -ge 501 ] || exit 0
+domain="gui/$console_user"
+label=local.androidfinder.agent
+if /bin/launchctl print "$domain/$label" >/dev/null 2>&1; then
+    /bin/launchctl kickstart -k "$domain/$label" || :
+else
+    /bin/launchctl bootstrap "$domain" "/Library/LaunchAgents/$label.plist" || :
+fi
