@@ -2,7 +2,7 @@
   <img src="file-provider/branding/AndroidRobot.svg" width="140" height="140" alt="Android Finder logo">
 </p>
 
-<h1 align="center">Android_Finder</h1>
+<h1 align="center">Android Finder</h1>
 
 <p align="center"><b>Native Android MTP inside macOS Finder, with zero third-party bloat.</b><br>
 Plug in your Android phone over USB and browse, copy, rename, and create folders directly in Finder<br>
