@@ -11,7 +11,7 @@
         <line choice="androidfinder"/>
     </choices-outline>
     <choice id="androidfinder" visible="false">
-        <pkg-ref id="local.androidfinder"/>
+        <pkg-ref id="local.androidfinder.native"/>
     </choice>
-    <pkg-ref id="local.androidfinder" version="0.1.0">AndroidFinder-component.pkg</pkg-ref>
+    <pkg-ref id="local.androidfinder.native" version="1.0.0">AndroidFinder-FileProvider-component.pkg</pkg-ref>
 </installer-gui-script>

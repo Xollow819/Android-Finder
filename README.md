@@ -1,27 +1,111 @@
-# Android Finder — File Provider
+<p align="center">
+  <img src="file-provider/branding/AndroidRobot.svg" width="140" height="140" alt="Android Finder logo">
+</p>
 
-A headless Swift helper for Apple Silicon on macOS 14 or later. It discovers MTP interfaces over USB, then queries each device for accessible storage before registering its Finder location. If the phone switches to No data transfer or disconnects, the location is removed. A busy USB interface is retried without hiding the device mid-transfer. Open the device entry to browse its MTP storage and copy files to the Mac. The sandboxed File Provider extension opens the USB session with libmtp when Finder needs it. On writable storage, Finder can create folders, copy new files to the phone, and rename items. The device location itself is a virtual container. Write operations start inside a storage folder such as Internal storage. Replacing file contents, moving items, and deleting items are unsupported.
+<h1 align="center">android-finder</h1>
 
-## Install and use
+<p align="center"><b>Native Android MTP inside macOS Finder, with zero third-party bloat.</b><br>
+Plug in your Android phone over USB and browse, copy, rename, and create folders directly in Finder<br>
+using a sandboxed Apple Silicon File Provider extension powered by <code>libmtp</code> and <code>libusb</code>.</p>
 
-1. Install `dist/AndroidFinder-FileProvider.pkg`. It installs the headless `Android Finder.app` bundle and a LaunchAgent for the signed-in GUI session. macOS uses the bundle to discover the File Provider extension.
-2. Plug in an unlocked Android phone with a data cable and choose **File transfer** on the phone. If the Mac asks whether to allow the USB accessory, select **Allow**.
-3. If Finder asks to enable the provider, follow its prompt. On macOS 15 and later, you can also look under **System Settings → General → Login Items & Extensions → File Providers** for **Android Finder**. On macOS 14, check the **Enable** button in the Finder location.
-4. Look under **Finder → Locations**, open the phone, then open **Internal storage** (the name comes from the phone). macOS may group the entry under **Android Finder**. Allow a few seconds for the storage check after switching USB modes. Phones that advertise MTP by name are recognized, as is the Vivo V19's known MTP product ID.
+<p align="center">
+  <img src="https://img.shields.io/badge/Swift-macOS%2014%2B-F05138?logo=swift&logoColor=white" alt="Swift on macOS 14+">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-2563EB?logo=apple&logoColor=white" alt="Apple Silicon arm64">
+  <a href="https://github.com/Xollow819/Android-Finder/releases"><img src="https://img.shields.io/github/v/release/Xollow819/Android-Finder?color=E2862A&label=release" alt="Latest release"></a>
+  <a href="https://github.com/Xollow819/Android-Finder"><img src="https://img.shields.io/github/stars/Xollow819/Android-Finder?style=social" alt="GitHub stars"></a>
+</p>
 
-The installer is unsigned and the local app bundle is ad-hoc signed. The package contains our own helper and extension; it does not include MtpMount, WebDAV, or a GUI.
+<p align="center">
+  <a href="https://github.com/Xollow819/Android-Finder/releases/latest"><img src="https://img.shields.io/badge/Download_v1.0_.pkg-2563EB?style=for-the-badge&logo=apple&logoColor=white" alt="Download v1.0 .pkg"></a>
+</p>
 
-## Finder name and icon
+<p align="center">
+  <b><a href="#quick-start">Install</a></b> · <a href="https://github.com/Xollow819/Android-Finder/releases">Releases</a> · <a href="#how-it-works">How it works</a> · <a href="#build-from-source">Build</a> · <a href="#troubleshooting">Troubleshooting</a> · <a href="#uninstall">Uninstall</a>
+</p>
 
-Each File Provider domain uses the connected phone's USB name (`NSFileProviderHideExtensionName` is enabled on the extension so Finder shows the connected device's name in the sidebar while keeping the app bundle named `Android Finder.app`). Individual domain names follow whichever Android devices are connected.
+<table>
+  <tr>
+    <td width="25%" valign="top">
+      <b>Detect</b><br>
+      A headless LaunchAgent watches IOKit <code>IOUSBHostInterface</code> for MTP devices and known USB product IDs.
+    </td>
+    <td width="25%" valign="top">
+      <b>Verify</b><br>
+      Before registering a Finder location, the helper verifies accessible MTP storage so unready phones stay hidden.
+    </td>
+    <td width="25%" valign="top">
+      <b>Mount</b><br>
+      A sandboxed <code>NSFileProviderReplicatedExtension</code> exposes the phone directly under <b>Finder → Locations</b>.
+    </td>
+    <td width="25%" valign="top">
+      <b>Transfer</b><br>
+      Copy files to and from your Mac, create folders, and rename items in Finder, with busy-USB retry mid-transfer.
+    </td>
+  </tr>
+</table>
 
-The color bundle icon and monochrome sidebar symbol use the Android robot artwork. The attribution and original SVG are in `file-provider/branding`. The build packages the compiled symbol catalog for Finder.
+**Plug in your Android phone and use Finder natively.** macOS does not ship built-in MTP support in Finder. `android-finder` bridges USB MTP devices straight into macOS's native File Provider framework without background WebDAV servers, FUSE kernel extensions, or a heavy Electron/GUI wrapper.
 
-## Build and verify
+| Operation in Finder | Supported | Notes |
+| --- | :---: | --- |
+| Browse storage & folders | Yes | Reads device storage labels (e.g. `Internal storage`) dynamically |
+| Copy files from phone to Mac | Yes | Streamed on demand via `libmtp` inside the sandboxed extension |
+| Copy new files from Mac to phone | Yes | Inside writable storage folders (device root is a virtual container) |
+| Create folders & rename items | Yes | Supported on writable MTP storage |
+| Replace contents, move, or delete | No | Currently unsupported by the provider |
+| Hot-plug & mode switching | Yes | Automatically removes the location on disconnect or *No data transfer* |
 
-Run `./build-file-provider.sh` with the macOS Command Line Tools and pkg-config installed. The script builds the pinned libmtp and libusb dependencies on the first build. It compiles and signs both binaries and creates `dist/AndroidFinder-FileProvider.pkg`. For distribution with a Developer ID certificate, the same script accepts `SIGN_IDENTITY`, `APPLE_TEAM_ID`, `APP_PROFILE`, and `EXTENSION_PROFILE`.
+> `android-finder` is an independent open-source project. "Android" is a trademark of Google LLC, and "macOS" and "Finder" are trademarks of Apple Inc.
 
-After installation, check detection and the domain registered with macOS:
+> [!NOTE]
+> The prebuilt installer is unsigned and the local app bundle is ad-hoc signed. If macOS Gatekeeper blocks opening the `.pkg` directly, install it from Terminal using `sudo /usr/sbin/installer` (shown below).
+
+## Quick start
+
+1. Download **`AndroidFinder-FileProvider-1.0.pkg`** from [GitHub Releases](https://github.com/Xollow819/Android-Finder/releases/latest) and install it:
+
+```sh
+sudo /usr/sbin/installer -pkg ~/Downloads/AndroidFinder-FileProvider-1.0.pkg -target /
+```
+
+2. Unlock your Android phone, connect it with a USB data cable, and select **File transfer** in the USB notification. If macOS prompts to allow the accessory, select **Allow**.
+3. If Finder asks to enable the File Provider extension, confirm it. You can also check **System Settings → General → Login Items & Extensions → File Providers** and enable **Android Finder** (on macOS 14, click **Enable** inside the Finder location).
+4. Open **Finder → Locations**, select your phone, and open **Internal storage**.
+
+## How it works
+
+`android-finder` runs two lightweight native binaries inside `/Applications/Android Finder.app`:
+
+- **Background Helper (`AndroidFinder`)** — Launched at login via `/Library/LaunchAgents/local.androidfinder.native.plist`. It scans `IOUSBHostInterface` for MTP-capable devices (including explicit MTP interfaces and known product IDs like the Vivo V19), verifies readable storage, and registers or removes `NSFileProviderDomain` entries dynamically.
+- **Sandboxed Extension (`AndroidFinderProvider.appex`)** — Implements `NSFileProviderReplicatedExtension` with App Sandbox and USB device entitlements (`com.apple.security.device.usb`). Finder invokes it on demand to enumerate folders, download files, upload new files, create directories, and rename items via statically linked `libmtp` and `libusb`.
+
+### Finder appearance
+
+Each connected device registers its own File Provider domain using its USB product name (`NSFileProviderHideExtensionName` is enabled so Finder displays the phone's name directly in the sidebar). Both the bundle icon and Finder's monochrome sidebar symbol are compiled from the Android robot SVG in [`file-provider/branding/`](file-provider/branding/).
+
+## Build from source
+
+Requires an **Apple Silicon Mac (arm64)** running **macOS 14 Sonoma or later** with **Xcode Command Line Tools** and `pkg-config` installed (`brew install pkgconf`):
+
+```sh
+./build.sh
+```
+
+On the first run, `./build.sh` downloads, verifies (SHA-256), patches (`file-provider/libmtp-probe.patch`), and statically compiles `libusb-1.0.30` and `libmtp-1.1.23`, builds both Swift/C binaries, generates the app icon, signs the bundle, and outputs `dist/AndroidFinder-FileProvider.pkg`.
+
+For distribution signing with a Developer ID certificate, pass your signing variables:
+
+```sh
+SIGN_IDENTITY="Developer ID Application: ..." \
+APPLE_TEAM_ID="XXXXXXXXXX" \
+APP_PROFILE="/path/to/app.provisionprofile" \
+EXTENSION_PROFILE="/path/to/extension.provisionprofile" \
+./build.sh
+```
+
+## Troubleshooting
+
+Check connected USB MTP detection, storage readiness, and registered Finder domains from Terminal:
 
 ```sh
 helper=$(plutil -extract ProgramArguments.0 raw /Library/LaunchAgents/local.androidfinder.native.plist)
@@ -30,11 +114,15 @@ helper=$(plutil -extract ProgramArguments.0 raw /Library/LaunchAgents/local.andr
 "$helper" --status
 ```
 
-To inspect the background helper's logs, use `log show --last 10m --predicate 'subsystem == "local.androidfinder.provider"'`.
+Inspect live logs from the background helper:
+
+```sh
+log show --last 10m --predicate 'subsystem == "local.androidfinder.provider"'
+```
 
 ## Uninstall
 
-Run these commands as the signed-in user. Quit other active macOS user sessions first. Read the helper path from the installed LaunchAgent before removing either file. Remove the File Provider domains while the app bundle is still present so Finder can remove the device locations and preserve any unsynced local files.
+Run these commands as the signed-in user (quit any other active macOS GUI sessions first). Removing domains while the app bundle is still present lets Finder clean up device locations and preserve any unsynced local files:
 
 ```sh
 agent=/Library/LaunchAgents/local.androidfinder.native.plist
@@ -48,52 +136,7 @@ sudo rm -rf "$app"
 sudo pkgutil --forget local.androidfinder.native
 ```
 
-## Legacy WebDAV helper
+## Third-Party & Attribution
 
-Mount one Android phone's USB file storage in macOS with a background helper. The installer places a LaunchAgent in `/Library/LaunchAgents`. It runs in each logged-in GUI session and mounts the first available MTP device as a read-only WebDAV volume. Its WebDAV listener is bound to loopback and uses a fresh random password for each connection. The helper and its libraries are installed under `/Library/Application Support/Android Finder`.
-
-### Install and use
-
-These steps apply to the original WebDAV package only. Use an Apple Silicon Mac running macOS 14 Sonoma or later. Homebrew is only needed if you are building from source.
-
-1. Open `dist/AndroidFinder.pkg`. This local build has no Developer ID installer signature. If the graphical installer declines it, install the local package from the project directory with `sudo /usr/sbin/installer -pkg dist/AndroidFinder.pkg -target /`.
-2. Unlock your Android phone, plug it in with a USB data cable, and choose **File transfer** in its USB notification. Allow the accessory connection if macOS asks. Quit any other app that is using the phone's MTP connection.
-3. Open Finder and look under **Locations**, with **Connected servers** also enabled in Finder's sidebar settings. You can always press **Shift–Command–G** and enter `~/Library/Application Support/Android Finder/Android` to go to the volume directly. If the agent did not start during installation, log out and back in.
-
-Copy files from the phone to your Mac. Eject the volume in Finder or disconnect the cable. If you eject it, reconnect the phone to mount it again. The file listing refreshes as Finder requests new listings.
-
-The helper uses partial MTP reads when the device supports them. For devices that require whole-file downloads, it temporarily stages the requested file in the user's private directory and needs enough disk space for that file.
-
-### Troubleshoot
-
-The agent log is at `~/Library/Application Support/Android Finder/agent.log`.
-
-```sh
-launchctl print "gui/$(id -u)/local.androidfinder.agent"
-```
-
-If the device never appears, check that macOS can see it under **System Information → USB**. Reconnect the unlocked phone and select **File transfer** again. The Finder mount only exposes storage that Android makes available over MTP.
-
-### Remove
-
-If you are removing the original WebDAV package and have not upgraded to File Provider, stop the agent, then remove the installed files and receipt. Log out any other active GUI account first.
-
-```sh
-launchctl bootout "gui/$(id -u)/local.androidfinder.agent"
-sudo rm -f /Library/LaunchAgents/local.androidfinder.agent.plist
-sudo rm -rf '/Library/Application Support/Android Finder'
-sudo pkgutil --forget local.androidfinder
-```
-
-The private log directory under your home Library can be moved to Trash once the mount has ejected.
-
-### Build and test
-
-Install the Xcode Command Line Tools, Go 1.26 or later, and pkg-config, then run:
-
-```sh
-brew install go pkgconf
-ANDROID_FINDER_TEST_MOUNT=1 ./build.sh
-```
-
-The build script verifies and compiles the pinned libusb and libmtp sources, bundles the libraries and their corresponding source archives, builds the helper, runs tests, and writes `dist/AndroidFinder.pkg`. The native mount test mounts simulated Android storage through macOS, reads a file, verifies that writes are rejected, and unmounts the fixture. The installer and helper require a real Android device in File transfer mode to test the USB path end to end.
+- **Android Robot Artwork** — Reproduced/modified from work created and shared by Google under the [Creative Commons 3.0 Attribution License](https://creativecommons.org/licenses/by/3.0/) (see [`file-provider/branding/NOTICE.txt`](file-provider/branding/NOTICE.txt)).
+- **libmtp & libusb** — Pinned static builds of `libmtp-1.1.23` and `libusb-1.0.30` (with [`file-provider/libmtp-probe.patch`](file-provider/libmtp-probe.patch)); source archives and licenses are bundled under `/Library/Application Support/Android Finder/Third-Party`.
